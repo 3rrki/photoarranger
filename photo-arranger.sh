@@ -6,27 +6,32 @@ set -e
 #
 # This script will arrange photos and movies by its creation year and month
 #
+# Author: 3rrki 2020
+#
 ###############################################################################
 
-# Get input dir
-# Get output dir
-
-# Example:
 #
-# ./photo-arranger.sh -src /mnt/photos -dest /home/erik/photos
+# ./photo-arranger.sh -src /mnt/photos -dest /mnt/rearranged-photos
+#
+
+
+####
+#
+# basic flow:
 #
 # find all files from input dir
-## for each file do
-### verify valid file (JPG, PNG, GIF, TIF, MOV, MP4 etc etc)
-### run exiftool to extract date times
-### generate new dir in "output dir" like ${OUTPUT_DIR}/${YEAR}/${MONTH}
-### calculate MD5sum
-### check if file with the same name already is present in the same dir
-#### if yes, compare MD5sum. If same -> just skip copy. If not same -> try rename file by adding a suffix "${NAME]_00.${EXT}"
-##### check if name is unique and if not, just increase the running number and check again.
-### copy file to that output-dir
-### append to log file in "output dir" (photo-arranger.log)
-#### <original file> | <copied file> | <md5 sum>
+#  for each file do
+#   verify valid file (JPG, PNG, GIF, TIF, MOV, MP4 etc etc)
+#   run exiftool to extract date times
+#   generate new dir in "output dir" like ${OUTPUT_DIR}/${YEAR}/${MONTH}
+#   check if file with the same name already is present in the same dir
+#   if yes, compare MD5sum. If same -> just skip copy. If not same -> try rename file by adding a suffix "${NAME]_00.${EXT}"
+#    check if name is unique and if not, just increase the running number and check again.
+#   copy file to that output-dir
+#   append to log file
+#
+####
+
 
 log() {
     WHEN=$(date +"%T")
