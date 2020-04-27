@@ -32,10 +32,27 @@ set -e
 #
 ####
 
+LOG_FILE=
+DRY_RUN=false
+OPERATION="copy"
+DEBUG=false
+INPUT_DIR=
+OUTPUT_DIR=
+
+# Collect some stats in these variables
+COUNT_TOTAL_FILES=0
+COUNT_UNSUPPORTED_FILE_EXT=0
+COUNT_ALREADY_THERE=0
+COUNT_COPIED=0
+COUNT_MOVED=0
 
 log() {
     WHEN=$(date +"%T")
-    echo -e "$1 [$WHEN] $2" 1>&2
+    LOG_TXT="$1 [$WHEN] $2"
+    echo -e "${LOG_TXT}" 1>&2
+    if [ -n "${LOG_FILE}" ]; then
+        echo -e "${LOG_TXT}" | sed 's/\x1b\[[0-9;]*m//g' >> ${LOG_FILE}
+    fi
 }
 
 logError() {
@@ -101,6 +118,8 @@ compareChecksums() {
 processFile() {
 	FN=$(basename "$1")
 
+    COUNT_TOTAL_FILES=$((COUNT_TOTAL_FILES+1))
+
 	logInfo "Processing file: \e[32m$1\e[0m"
 	if [ ! -e "$1" ] || [ ${#FN} == 0 ] ; then
 		return 1
@@ -110,11 +129,12 @@ processFile() {
 	FILE_EXT=${FN##*.}
     FILE_EXT_LC=$(echo "$FILE_EXT" | tr '[:upper:]' '[:lower:]')
     case $FILE_EXT_LC in 
-        jpg|gif|png|jpeg|mov|mp4|mpg)
+        jpg|gif|png|jpeg|mov|mp4|mpg|heic|heif)
             # File extension ok
             ;;
         *)
             logWarn "File extension ${FILE_EXT} not supported. Ignoring file: ${FN}"
+            COUNT_UNSUPPORTED_FILE_EXT=$((COUNT_UNSUPPORTED_FILE_EXT+1))
             return
     esac
 
@@ -137,17 +157,18 @@ processFile() {
     idx=1
     while [[ $idx -le 20 ]]; do
         if [ ! -e "${DEST_FILE}" ]; then
-
             case $OPERATION in
                 "copy")
+                    COUNT_COPIED=$((COUNT_COPIED+1))
                     logInfo "Copying ${1} to ${DEST_FILE}"
                     if ${DRY_RUN} ; then
-                        logInfo ">> cp ${1} ${DEST_FILE}"
+                        logInfo ">> cp -p ${1} ${DEST_FILE}"
                     else
-                        cp "${1}" "${DEST_FILE}"
+                        cp -p "${1}" "${DEST_FILE}"
                     fi
                     ;;
                 "move")
+                    COUNT_MOVED=$((COUNT_MOVED+1))
                     logInfo "Moving ${1} to ${DEST_FILE}"
                     if ${DRY_RUN} ; then
                         logInfo ">> mv ${1} ${DEST_FILE}"
@@ -162,6 +183,7 @@ processFile() {
 
         logDebug "Dest file ${DEST_FILE} exists. Will compare MD5 checksum."
         if compareChecksums "$1" "$DEST_FILE" ; then
+            COUNT_ALREADY_THERE=$((COUNT_ALREADY_THERE+1))
             logInfo "Target file ${DEST_FILE} already copied. Skipping."
             return 0
         fi
@@ -187,12 +209,6 @@ checkThatWeHave() {
     fi
 }
 
-DRY_RUN=false
-OPERATION="copy"
-DEBUG=false
-INPUT_DIR=
-OUTPUT_DIR=
-
 usage() {
     echo ""
     echo "Usage: ${0} [OPTIONS]"
@@ -206,10 +222,12 @@ usage() {
     echo -e "\t                 be a sub-dir of the input directory."
     echo -e "\t-d               Enables verbose output"
     echo -e "\t-x OPERATION     Defines what file operation to use (copy or move). Default is copy."
-    echo -e "\t-dr              Dry run mode. No changes will be done, operation is only logged." 
+    echo -e "\t-dr              Dry run mode. No changes will be done, operation is only logged."
+    echo -e "\t-l LOGFILE       Write log to LOGFILE"
     echo ""
 }
 
+# Parse arguments
 while [ "$1" != "" ]; do
     case $1 in
         -h | --help)
@@ -223,14 +241,18 @@ while [ "$1" != "" ]; do
             INPUT_DIR=$2
             shift
             ;;
+        -l | --log-file)
+            LOG_FILE=$2
+            shift
+            ;;
         -out | --output-dir)
             OUTPUT_DIR=$2
             shift
             ;;
-        -dr)
+        -dr | --dry-run)
             DRY_RUN=true
             ;;
-        -x)
+        -x | --operation)
             case $2 in
                 copy | cp)
                     OPERATION=copy
@@ -254,6 +276,7 @@ while [ "$1" != "" ]; do
     shift
 done
 
+# Validate arguments
 if [ -z "${INPUT_DIR}" ]; then
     echo "ERROR: No input directory specified"
     usage
@@ -272,12 +295,28 @@ if [ -f "${OUTPUT_DIR}" ]; then
     echo "ERROR: Output dir '${OUTPUT_DIR}' is a file"
     exit
 fi
+if [ -n "${LOG_FILE}" ]; then
+    if [ -e "${LOG_FILE}" ]; then
+        if [ -d "${LOG_FILE}" ]; then
+            echo "ERROR: Log file ${LOG_FILE} is a directory"
+            exit
+        elif [ ! -w "${LOG_FILE}" ]; then
+            echo "ERROR: Log file ${LOG_FILE} is NOT writeable"
+            exit
+        fi
+    else
+        touch "${LOG_FILE}"
+    fi   
+fi
 
-
+# Begin processing...
 logInfo "Starting..."
 logInfo "    Input Dir      : ${INPUT_DIR}"
 logInfo "    Output Dir     : ${OUTPUT_DIR}"
 logInfo "    File operation : ${OPERATION}"
+if [ -n "${LOG_FILE}" ]; then
+    logInfo "    Log file       : ${LOG_FILE}"
+fi
 if ${DRY_RUN} ; then
     logWarn "**** DRY RUN (NO FILES WILL BE MOVED / COPIED) ****"
 fi
@@ -293,4 +332,10 @@ while read -d '' filename; do
   processFile "${filename}" < /dev/null
 done < <(find ${INPUT_DIR} -type f -not -path "*/@eaDir/*" -print0)
 
-logInfo "Done."
+logInfo "Completed."
+logInfo "   Total nr of files                           : ${COUNT_TOTAL_FILES}"
+logInfo "   Nr of files with unsupported file extension : ${COUNT_UNSUPPORTED_FILE_EXT}"
+logInfo "   Files already copied previously             : ${COUNT_ALREADY_THERE}"
+logInfo "   Files copied                                : ${COUNT_COPIED}"
+logInfo "   Files moved                                 : ${COUNT_MOVED}"
+

@@ -26,6 +26,7 @@ OPTIONS
 	-d               Enables verbose output
 	-x OPERATION     Defines what file operation to use (copy or move). Default is copy.
 	-dr              Dry run mode. No changes will be done, operation is only logged.
+    -l LOGFILE       Append log to LOGFILE
 
 
 Example:
